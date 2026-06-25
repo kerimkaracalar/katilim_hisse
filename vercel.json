@@ -1,6 +1,8 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "public": true,
+  "framework": null,
+  "outputDirectory": "public",
   "functions": {
     "api/*.js": {
       "maxDuration": 20
@@ -10,11 +12,17 @@
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "s-maxage=60, stale-while-revalidate=300" }
+        {
+          "key": "Cache-Control",
+          "value": "s-maxage=60, stale-while-revalidate=300"
+        }
       ]
     }
   ],
   "rewrites": [
-    { "source": "/", "destination": "/index.html" }
+    {
+      "source": "/",
+      "destination": "/index.html"
+    }
   ]
 }
