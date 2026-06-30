@@ -1,5 +1,7 @@
-// /api/katilim?index=XK100|XK030|XK050|XKTUM
-// Uses official Borsa İstanbul participation CSV first. Falls back to bundled seed list.
+// /api/katilim?index=XK100|XK030|XK050|XKTUM&source=kt|bist|auto
+// Uses Kuveyt Türk Yatırım katılım sayfası first, then official Borsa İstanbul CSV, then bundled seed list.
+
+import { fetchKuveytTurkPage } from './kuveytturk.js';
 
 const OFFICIAL_CSV = 'https://borsaistanbul.com/datum/hisse_endeks_katilim_ds.csv';
 
@@ -195,9 +197,35 @@ function pickIndex(list, index) {
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return send(res, 200, { ok: true });
   const index = String(req.query.index || 'XK100').toUpperCase();
+  const sourcePref = String(req.query.source || 'auto').toLowerCase();
   const forceSeed = req.query.seed === '1';
-  try {
-    if (!forceSeed) {
+  const errors = [];
+
+  if (!forceSeed && sourcePref !== 'bist') {
+    try {
+      const kt = await fetchKuveytTurkPage();
+      const list = kt.universe || [];
+      const items = pickIndex(list, index);
+      if (items.length >= 10) {
+        return send(res, 200, {
+          ok: true,
+          source: 'Kuveyt Türk Yatırım · Katılım Endeksinde Yer Alan Şirketler',
+          sourceUrl: kt.url,
+          index,
+          count: items.length,
+          updatedAt: kt.fetchedAt || new Date().toISOString(),
+          cache: kt.cache,
+          diagnostics: kt.diagnostics,
+          indexes: kt.indexes || [],
+          items
+        });
+      }
+      errors.push(`Kuveyt Türk liste yetersiz/parse edilemedi (${items.length})`);
+    } catch (e) { errors.push(`Kuveyt Türk: ${e.message}`); }
+  }
+
+  if (!forceSeed && sourcePref !== 'kt') {
+    try {
       const list = await loadOfficial();
       const items = pickIndex(list, index);
       return send(res, 200, {
@@ -207,21 +235,21 @@ export default async function handler(req, res) {
         index,
         count: items.length,
         updatedAt: new Date().toISOString(),
+        warning: errors.length ? errors.join(' | ') : undefined,
         items
       });
-    }
-    throw new Error('Seed requested');
-  } catch (err) {
-    const items = pickIndex(SEED, index);
-    return send(res, 200, {
-      ok: true,
-      source: 'Bundled seed fallback',
-      warning: `Resmi BIST CSV alınamadı; yerel yedek liste kullanılıyor. Detay: ${err.message}`,
-      officialUrl: OFFICIAL_CSV,
-      index,
-      count: items.length,
-      updatedAt: new Date().toISOString(),
-      items
-    });
+    } catch (err) { errors.push(`BIST CSV: ${err.message}`); }
   }
+
+  const items = pickIndex(SEED, index);
+  return send(res, 200, {
+    ok: true,
+    source: 'Bundled seed fallback',
+    warning: `Kuveyt Türk/BIST kaynakları alınamadı; yerel yedek liste kullanılıyor. Detay: ${errors.join(' | ') || 'Seed requested'}`,
+    officialUrl: OFFICIAL_CSV,
+    index,
+    count: items.length,
+    updatedAt: new Date().toISOString(),
+    items
+  });
 }
