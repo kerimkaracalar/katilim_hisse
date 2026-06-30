@@ -1,38 +1,70 @@
-# Katılım Radar BIST v1.5
+# Katılım Radar BIST v1.6
 
-Bu sürüm veri katmanına odaklanır.
+Bu sürümde sistem karar destek yapısına çevrildi:
 
-## Ana değişiklikler
+- **Katılım evreni ana kaynak:** Kuveyt Türk Yatırım `Katılım Endeksinde Yer Alan Şirketler` bölümü.
+- **Katılım evreni fallback:** Borsa İstanbul resmi katılım CSV.
+- **Güncel fiyat snapshot ana kaynak:** OYAK Yatırım katılım piyasa verileri tablosu.
+- **Geçmiş OHLC / teknik analiz ana kaynak:** İş Yatırım `HisseTekil` günlük tarihsel verisi.
+- **Fallback:** Yahoo Finance chart proxy.
+- **AI:** Sadece sistemin çektiği fiyat/geçmiş bar/teknik gösterge/fırsat skoru/pozisyon planı verilerini yorumlar.
 
-- İş Yatırım `HisseTekil` veri çekimi daha dayanıklı hale getirildi.
-- Aynı endpoint için hem `.json` uzantılı hem uzantısız format denenir.
-- `Website` / `WebSite` path varyasyonları denenir.
-- 1 hafta öncesine kadar olan tarihsel veri server memory cache'e alınır.
-- Son 1 haftalık veri her sorguda canlı/güncel kaynaktan çekilip cache'li geçmişle birleştirilir.
-- `/api/cache` endpointi eklendi. Katılım evreni arka planda küçük parçalar halinde cache'e hazırlanır.
-- Teknik tarama artık tek büyük istek yerine 8'li parçalar halinde çalışır; bu Vercel timeout riskini azaltır.
-- Fiyat panosu kartları tıklanabilir hale getirildi; karttan hisse detayına gidilir.
-- Tarama sırasında sonuçlar parça parça ekranda görünür.
+> Not: Kuveyt Türk sayfası katılım listesi, endeks bilgileri ve şirket uygunluk/detail referansı için kullanılır. Hisse bazlı tam OHLC geçmiş veri sayfada yoksa teknik analiz için İş Yatırım/Yahoo kaynakları kullanılır.
 
-## Test endpointleri
+## Yeni endpointler
+
+### Kuveyt Türk katılım evreni
+
+```txt
+/api/kuveytturk?mode=universe&index=XK100
+/api/kuveytturk?mode=indexes
+/api/kuveytturk?mode=company&symbol=ASELS
+```
+
+### Katılım listesi
+
+```txt
+/api/katilim?index=XK100
+```
+
+Öncelik Kuveyt Türk Yatırım, sonra BIST resmi CSV, sonra yerel seed listedir.
+
+### Güncel fiyat panosu
+
+```txt
+/api/snapshot?symbols=ASELS,BIMAS,TUPRS&index=XKTUM&range=3mo
+```
+
+Öncelik OYAK Yatırım güncel tablo, sonra İş Yatırım/Yahoo fallback.
+
+### Geçmiş fiyat / teknik analiz
 
 ```txt
 /api/history?symbol=ASELS&range=1y
 /api/market?symbol=ASELS&range=1y&interval=1d
-/api/snapshot?symbols=ASELS,BIMAS,TUPRS&range=3mo
 /api/scan?symbols=ASELS,BIMAS,TUPRS&range=1y&interval=1d
-/api/cache?symbols=ASELS,BIMAS,TUPRS&range=1y
 ```
 
-## Veri mantığı
+## Test sırası
+
+1. `/api/kuveytturk?mode=universe&index=XK100`
+2. `/api/katilim?index=XK100`
+3. `/api/oyak?index=XKTUM`
+4. `/api/snapshot?symbols=ASELS,BIMAS,TUPRS&index=XKTUM`
+5. `/api/market?symbol=ASELS&range=1y&interval=1d`
+6. `/api/scan?symbols=ASELS,BIMAS,TUPRS&range=1y&interval=1d`
+
+## Veri mimarisi
 
 ```txt
-TradingView widgetları = görsel/anlık referans
-İş Yatırım HisseTekil = ana OHLC/hacim ve teknik analiz verisi
-Yahoo Finance = fallback
-AI = yalnızca çekilen bar verileri + teknik göstergeler + fırsat skoru üzerinden yorum
+Kuveyt Türk Yatırım -> Katılım evreni + endeks/şirket referansı
+OYAK Yatırım        -> Güncel fiyat snapshot/fiyat panosu
+İş Yatırım          -> Geçmiş günlük OHLC + hacim
+Yahoo Finance       -> Fallback chart data
+TradingView         -> Görsel widget / manuel doğrulama
+AI                  -> Sadece bu veri paketinin karar destek yorumu
 ```
 
-## Not
+## Yasal/teknik not
 
-BIST gerçek zamanlı verisi lisanslıdır. Bu sistem ücretsiz ve gecikmeli kaynakları kullanır; yatırım tavsiyesi değildir.
+Bu uygulama yatırım tavsiyesi değildir. BIST gerçek zamanlı veri lisanslı veri dağıtıcıları üzerinden sağlanır; ücretsiz web kaynakları gecikmeli, eksik veya erişime kapalı olabilir. Vercel memory cache kalıcı veritabanı değildir; kalıcı cache için sonraki adımda Upstash Redis / Vercel KV eklenebilir.

@@ -1,12 +1,12 @@
 {
   "name": "katilim-radar-bist",
-  "version": "1.4.0",
+  "version": "1.6.0",
   "private": true,
-  "description": "Borsa Istanbul katılım hisseleri için ücretsiz veri kaynaklı teknik analiz paneli",
+  "description": "Kuveyt Türk katılım evreni + OYAK/İş Yatırım veri kaynaklı karar destek paneli",
   "type": "module",
   "scripts": {
     "dev": "vercel dev",
-    "check": "node --check api/isyatirim.js && node --check api/history.js && node --check api/snapshot.js && node --check api/market.js && node --check api/scan.js && node --check api/katilim.js && node --check api/ai.js"
+    "check": "node --check api/kuveytturk.js && node --check api/oyak.js && node --check api/isyatirim.js && node --check api/history.js && node --check api/snapshot.js && node --check api/market.js && node --check api/scan.js && node --check api/katilim.js && node --check api/cache.js && node --check api/ai.js"
   },
   "engines": {
     "node": ">=18"
