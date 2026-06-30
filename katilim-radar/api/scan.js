@@ -1,7 +1,9 @@
 // POST /api/scan { symbols:["ASELS","BIMAS"], range:"1y", interval:"1d" }
 // GET  /api/scan?symbols=ASELS,BIMAS&range=1y&interval=1d
+// Data source priority: İş Yatırım HisseTekil daily data -> Yahoo Finance fallback.
 
-const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart/';
+import { cleanSymbol, fetchBestBars } from './isyatirim.js';
+
 const ALLOWED_INTERVALS = new Set(['5m','15m','30m','60m','1h','1d','1wk']);
 const ALLOWED_RANGES = new Set(['1d','5d','1mo','3mo','6mo','1y','2y','5y','ytd']);
 
@@ -22,13 +24,8 @@ async function readBody(req) {
   try { return JSON.parse(raw); } catch { return {}; }
 }
 
-function normalizeSymbol(s='') {
-  const clean = String(s).trim().toUpperCase().replace(/[^A-Z0-9.]/g, '').replace(/\.E$/,'');
-  if (!clean) return '';
-  return clean.endsWith('.IS') ? clean : `${clean}.IS`;
-}
-
-function stripIS(s='') { return String(s).replace(/\.IS$/,''); }
+function normalizeSymbol(s='') { return cleanSymbol(s); }
+function stripIS(s='') { return cleanSymbol(s); }
 function num(v) { return Number.isFinite(v) ? v : null; }
 function last(arr) { return arr[arr.length - 1]; }
 function mean(vals) { const x = vals.filter(Number.isFinite); return x.length ? x.reduce((a,b)=>a+b,0)/x.length : null; }
@@ -114,30 +111,22 @@ function stochastic(bars, period = 14) {
   });
 }
 
-function toBars(result) {
-  const q = result?.indicators?.quote?.[0] || {};
-  const ts = result?.timestamp || [];
-  return ts.map((t, i) => ({
-    time: t * 1000,
-    date: new Date(t * 1000).toISOString().slice(0,10),
-    open: q.open?.[i] ?? null,
-    high: q.high?.[i] ?? null,
-    low: q.low?.[i] ?? null,
-    close: q.close?.[i] ?? null,
-    volume: q.volume?.[i] ?? 0
-  })).filter(b => Number.isFinite(b.close) && Number.isFinite(b.high) && Number.isFinite(b.low));
-}
-
 async function fetchBars(symbol, range, interval) {
-  const y = normalizeSymbol(symbol);
-  const url = `${YAHOO_BASE}${encodeURIComponent(y)}?range=${range}&interval=${interval}&includePrePost=false`;
-  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 KatilimRadar/1.0', 'Accept': 'application/json,*/*' } });
-  if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
-  const json = await r.json();
-  const result = json?.chart?.result?.[0];
-  const err = json?.chart?.error;
-  if (err || !result) throw new Error(err?.description || 'Boş veri');
-  return { meta: result.meta || {}, bars: toBars(result) };
+  const data = await fetchBestBars(symbol, range, interval);
+  return {
+    meta: {
+      currency: data.currency || 'TRY',
+      marketState: data.marketState || data.provider,
+      regularMarketTime: data.marketTime || data.lastBar?.time || null,
+      dataProvider: data.provider,
+      dataSource: data.source,
+      attempts: data.attempts || []
+    },
+    bars: data.bars,
+    source: data.source,
+    provider: data.provider,
+    attempts: data.attempts || []
+  };
 }
 
 function analyze(symbol, bars, meta={}) {
@@ -272,6 +261,9 @@ function analyze(symbol, bars, meta={}) {
     verdict,
     currency: meta.currency || 'TRY',
     marketState: meta.marketState,
+    dataProvider: meta.dataProvider || null,
+    dataSource: meta.dataSource || null,
+    dataAttempts: meta.attempts || [],
     marketTime: meta.regularMarketTime ? meta.regularMarketTime * 1000 : null,
     lastBar: last(bars)?.date,
     bars: bars.slice(-160),
@@ -316,8 +308,8 @@ export default async function handler(req, res) {
   const started = Date.now();
   const results = await mapLimit(symbols, 8, async (s) => {
     try {
-      const { meta, bars } = await fetchBars(s, range, interval);
-      return { ok: true, ...analyze(s, bars, meta) };
+      const { meta, bars, source, provider, attempts } = await fetchBars(s, range, interval);
+      return { ok: true, source, provider, attempts, ...analyze(s, bars, meta) };
     } catch (err) {
       return { ok: false, symbol: stripIS(s), error: err.message };
     }
@@ -327,8 +319,8 @@ export default async function handler(req, res) {
   const failed = results.filter(r => !r.ok);
   return send(res, 200, {
     ok: true,
-    source: 'Yahoo Finance chart proxy',
-    note: 'Ücretsiz/delayli veri kullanılır. Sinyaller teknik analiz amaçlıdır, yatırım tavsiyesi değildir.',
+    source: 'İş Yatırım HisseTekil primary + Yahoo Finance fallback',
+    note: 'Ücretsiz/gecikmeli veri kullanılır. Ana kaynak İş Yatırım günlük tarihsel veridir; başarısız olursa Yahoo fallback denenir. Sinyaller teknik analiz amaçlıdır, yatırım tavsiyesi değildir.',
     range,
     interval,
     scanned: symbols.length,
