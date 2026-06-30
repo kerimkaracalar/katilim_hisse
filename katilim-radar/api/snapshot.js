@@ -6,6 +6,7 @@ import { cleanSymbol, fetchBestBars } from './isyatirim.js';
 function send(res, status, payload) {
   res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=900');
   res.end(JSON.stringify(payload));
 }
 function round(v, d=2) { return Number.isFinite(v) ? Number(v.toFixed(d)) : null; }
