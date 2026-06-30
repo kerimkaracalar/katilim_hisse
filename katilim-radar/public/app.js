@@ -7,7 +7,10 @@ const state = {
   universe: [],
   results: [],
   selected: null,
-  watch: JSON.parse(localStorage.getItem('katilim_watch_v1') || '[]')
+  watch: JSON.parse(localStorage.getItem('katilim_watch_v1') || '[]'),
+  autoScan: false,
+  autoTimer: null,
+  lastScanAt: null
 };
 
 function setStatus(text, type='muted') {
@@ -25,6 +28,53 @@ function getSector(symbol) {
   return state.universe.find(x => x.symbol === symbol)?.sector || '';
 }
 function tagClass(score){ return score >= 63 ? 'good' : score < 47 ? 'bad' : 'mid'; }
+function oppTagClass(type){ return type === 'BREAKOUT' || type === 'TREND' ? 'good' : (type === 'PULLBACK' || type === 'REVERSAL' ? 'mid' : 'bad'); }
+function escapeHtml(x=''){ return String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function tvContainer(id) {
+  const el = $(id);
+  el.innerHTML = '<div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div></div>';
+  return el.querySelector('.tradingview-widget-container');
+}
+function addTVScript(container, src, payload) {
+  const script = document.createElement('script');
+  script.src = src;
+  script.async = true;
+  script.text = JSON.stringify(payload);
+  container.appendChild(script);
+}
+function renderMarketWidgets(selectedSymbol='ASELS') {
+  const ticker = tvContainer('tvTickerTape');
+  addTVScript(ticker, 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js', {
+    symbols: [
+      { proName:'BIST:XK100', title:'Katılım 100' },
+      { proName:'BIST:XK050', title:'Katılım 50' },
+      { proName:'BIST:XK030', title:'Katılım 30' },
+      { proName:'BIST:XKTUM', title:'Katılım Tüm' },
+      { proName:'BIST:XU100', title:'BIST 100' },
+      { proName:'FX_IDC:USDTRY', title:'USD/TRY' }
+    ],
+    showSymbolLogo:true, isTransparent:true, displayMode:'adaptive', colorTheme:'dark', locale:'tr'
+  });
+
+  const overview = tvContainer('tvIndexOverview');
+  addTVScript(overview, 'https://s3.tradingview.com/external-embedding/embed-widget-symbol-overview.js', {
+    symbols: [['BIST:XK100|1D'], ['BIST:XK050|1D'], ['BIST:XK030|1D'], ['BIST:XKTUM|1D']],
+    chartOnly:false, width:'100%', height:320, locale:'tr', colorTheme:'dark', autosize:true,
+    showVolume:false, showMA:true, hideDateRanges:false, scalePosition:'right', valuesTracking:'1',
+    changeMode:'price-and-percent', chartType:'area', isTransparent:true
+  });
+
+  renderSelectedMini(selectedSymbol);
+}
+function renderSelectedMini(symbol='ASELS') {
+  if (!$('tvSelectedMini')) return;
+  const clean = String(symbol || 'ASELS').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const mini = tvContainer('tvSelectedMini');
+  addTVScript(mini, 'https://s3.tradingview.com/external-embedding/embed-widget-symbol-info.js', {
+    symbol:`BIST:${clean}`, width:'100%', locale:'tr', colorTheme:'dark', isTransparent:true
+  });
+}
 
 async function loadUniverse() {
   const index = $('indexSelect').value;
@@ -33,6 +83,13 @@ async function loadUniverse() {
     const res = await fetch(`/api/katilim?index=${encodeURIComponent(index)}`);
     const data = await res.json();
     state.universe = data.items || [];
+    if (!state.universe.length && data.source?.includes('Borsa')) {
+      const seedRes = await fetch(`/api/katilim?index=${encodeURIComponent(index)}&seed=1`);
+      const seedData = await seedRes.json();
+      state.universe = seedData.items || [];
+      data.source = seedData.source;
+      data.warning = seedData.warning || 'Resmi dosya boş döndü; yedek liste kullanıldı.';
+    }
     $('universeCount').textContent = state.universe.length;
     $('universeSource').textContent = data.source || '—';
     setSource(data.source?.includes('Borsa') ? '✅ Resmi BIST katılım listesi' : '⚠️ Yedek katılım listesi', data.source?.includes('Borsa') ? 'good' : 'warning');
@@ -67,7 +124,9 @@ async function scanUniverse() {
     $('weakCount').textContent = state.results.filter(x => x.score < 47).length;
     $('scanMeta').textContent = `${data.source} · ${Math.round(performance.now()-started)} ms · Başarısız: ${(data.failed||[]).length}`;
     setStatus(`✅ Tarama tamamlandı · ${new Date().toLocaleTimeString('tr-TR')}`, 'good');
+    state.lastScanAt = new Date();
     renderResults();
+    renderOpportunities();
     if (state.results.length) selectSymbol(state.results[0].symbol);
   } catch (err) {
     $('resultsBody').innerHTML = `<tr><td colspan="8" class="empty">❌ Tarama hatası: ${err.message}</td></tr>`;
@@ -89,7 +148,7 @@ function renderResults() {
       <td class="mono">${fmt(r.indicators?.rsi14,1)}</td>
       <td class="mono ${clsBy(r.indicators?.macdHist)}">${fmt(r.indicators?.macdHist,3)}</td>
       <td class="mono ${clsBy(r.returns?.d20)}">${pct(r.returns?.d20)}</td>
-      <td><span class="tag ${tagClass(r.score)}">${r.verdict}</span></td>
+      <td><span class="tag ${oppTagClass(r.opportunity?.type)}">${r.opportunity?.label || r.verdict}</span><br><small>${r.positionPlan?.stance || ''}</small></td>
     </tr>
   `).join('');
   [...$('resultsBody').querySelectorAll('tr[data-symbol]')].forEach(tr => tr.addEventListener('click', () => selectSymbol(tr.dataset.symbol)));
@@ -125,9 +184,11 @@ function renderDetail(a) {
   $('detailMiniText').textContent = miniSummary(a);
   renderMetrics(a);
   renderLevels(a);
+  renderPositionPlan(a);
   renderLists(a);
   drawChart(a.bars || []);
   renderTV(a.symbol);
+  renderSelectedMini(a.symbol);
   $('aiOutput').textContent = 'AI analizi için butona basın. Gemini yoksa yerel teknik özet oluşturulur.';
   window.scrollTo({ top: $('detailPanel').offsetTop - 12, behavior: 'smooth' });
 }
@@ -152,6 +213,50 @@ function renderLevels(a) {
   const l = a.levels || {};
   const rows = [['Destek',l.support],['Direnç',l.resistance],['Takip stop',l.stop],['Hedef 1',l.target1],['Hedef 2',l.target2],['52H bandı',`${fmt(l.low52,2)} / ${fmt(l.high52,2)}`]];
   $('levelGrid').innerHTML = rows.map(([k,v]) => `<div class="level"><div class="k">${k}</div><div class="v mono">${typeof v === 'number' ? fmt(v,2) : v}</div></div>`).join('');
+}
+
+function renderPositionPlan(a) {
+  const p = a.positionPlan || {};
+  const opp = a.opportunity || {};
+  const zone = p.entryZone || {};
+  $('positionPlan').innerHTML = `
+    <div class="plan-stance tag ${oppTagClass(opp.type)}">${escapeHtml(p.stance || 'İZLE')}</div>
+    <div class="plan-grid">
+      <div class="level"><div class="k">Fırsat tipi</div><div class="v">${escapeHtml(opp.label || '—')}</div><small>Skor: ${fmt(opp.score,0)}/100</small></div>
+      <div class="level"><div class="k">Takip bölgesi</div><div class="v mono">${fmt(zone.low,2)} - ${fmt(zone.high,2)}</div></div>
+      <div class="level"><div class="k">Geçersizleşme</div><div class="v mono red">${fmt(p.invalidation,2)}</div></div>
+      <div class="level"><div class="k">Hedefler</div><div class="v mono green">${fmt(p.target1,2)} / ${fmt(p.target2,2)}</div></div>
+      <div class="level"><div class="k">Risk/Ödül</div><div class="v mono">${fmt(p.riskReward1,2)} / ${fmt(p.riskReward2,2)}</div></div>
+      <div class="level"><div class="k">Vade</div><div class="v">${escapeHtml(p.horizon || '—')}</div></div>
+    </div>
+    <p class="mini-text">${escapeHtml(p.note || 'Teknik seviyelerden üretilmiştir; yatırım tavsiyesi değildir.')}</p>
+  `;
+}
+
+function renderOpportunities() {
+  const box = $('opportunityGrid');
+  if (!box) return;
+  const candidates = state.results
+    .filter(r => r.opportunity && r.opportunity.type !== 'YOK' && r.score >= 48)
+    .sort((a,b) => (b.opportunity?.score || 0) - (a.opportunity?.score || 0))
+    .slice(0, 8);
+  $('oppMeta').textContent = candidates.length
+    ? `${candidates.length} teknik fırsat adayı bulundu · ${state.lastScanAt ? state.lastScanAt.toLocaleTimeString('tr-TR') : ''}`
+    : 'Net fırsat adayı bulunamadı; daha geniş evren veya farklı periyot deneyin.';
+  if (!candidates.length) {
+    box.innerHTML = '<div class="empty-card">Bu taramada güçlü fırsat adayı oluşmadı.</div>';
+    return;
+  }
+  box.innerHTML = candidates.map(r => `
+    <button class="opp-card" data-symbol="${r.symbol}">
+      <div class="opp-top"><b class="mono">${r.symbol}</b><span class="tag ${oppTagClass(r.opportunity.type)}">${r.opportunity.label}</span></div>
+      <small>${escapeHtml(getName(r.symbol))}</small>
+      <div class="opp-score"><div class="scorebar"><i style="width:${r.opportunity.score}%"></i></div><b>${r.opportunity.score}/100</b></div>
+      <div class="opp-data"><span>Fiyat <b>${fmt(r.price,2)}</b></span><span>RSI <b>${fmt(r.indicators?.rsi14,1)}</b></span><span>R/R <b>${fmt(r.positionPlan?.riskReward1,2)}</b></span></div>
+      <p>${escapeHtml((r.opportunity.reasons || [r.verdict])[0] || '')}</p>
+    </button>
+  `).join('');
+  [...box.querySelectorAll('[data-symbol]')].forEach(el => el.addEventListener('click', () => selectSymbol(el.dataset.symbol)));
 }
 function renderLists(a) {
   $('reasonList').innerHTML = (a.reasons?.length ? a.reasons : ['Net olumlu sinyal sınırlı.']).map(x => `<li>${x}</li>`).join('');
@@ -183,19 +288,25 @@ function drawChart(bars) {
 
 function renderTV(symbol) {
   const tvSymbol = `BIST:${symbol}`;
-  $('tvChart').innerHTML = '<div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div></div>';
-  const chartScript = document.createElement('script');
-  chartScript.src = 'https://s3.tradingview.com/external-embedding/embed-widget-symbol-overview.js';
-  chartScript.async = true;
-  chartScript.text = JSON.stringify({ symbols: [[`${tvSymbol}|1D`]], chartOnly:false, width:'100%', height:420, locale:'tr', colorTheme:'dark', autosize:true, showVolume:true, showMA:true, hideDateRanges:false, scalePosition:'right', valuesTracking:'1', changeMode:'price-and-percent', chartType:'area', isTransparent:true });
-  $('tvChart').querySelector('.tradingview-widget-container').appendChild(chartScript);
+  const chart = tvContainer('tvChart');
+  addTVScript(chart, 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js', {
+    autosize:true,
+    symbol:tvSymbol,
+    interval:'D',
+    timezone:'Europe/Istanbul',
+    theme:'dark',
+    style:'1',
+    locale:'tr',
+    allow_symbol_change:false,
+    calendar:false,
+    support_host:'https://www.tradingview.com'
+  });
 
-  $('tvTech').innerHTML = '<div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div></div>';
-  const techScript = document.createElement('script');
-  techScript.src = 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js';
-  techScript.async = true;
-  techScript.text = JSON.stringify({ interval:'1D', width:'100%', isTransparent:true, height:420, symbol:tvSymbol, showIntervalTabs:true, displayMode:'multiple', locale:'tr', colorTheme:'dark' });
-  $('tvTech').querySelector('.tradingview-widget-container').appendChild(techScript);
+  const tech = tvContainer('tvTech');
+  addTVScript(tech, 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js', {
+    interval:'1D', width:'100%', isTransparent:true, height:420, symbol:tvSymbol,
+    showIntervalTabs:true, displayMode:'multiple', locale:'tr', colorTheme:'dark'
+  });
 }
 
 async function runAI() {
@@ -204,7 +315,19 @@ async function runAI() {
   try {
     const res = await fetch('/api/ai', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ analysis: state.selected, universeSummary: state.results.slice(0,10).map(x => ({symbol:x.symbol, score:x.score, verdict:x.verdict, changePct:x.changePct})) })
+      body: JSON.stringify({
+        analysis: state.selected,
+        universeSummary: state.results.slice(0,12).map(x => ({
+          symbol:x.symbol,
+          score:x.score,
+          verdict:x.verdict,
+          changePct:x.changePct,
+          opportunity:x.opportunity,
+          positionPlan:x.positionPlan,
+          rsi:x.indicators?.rsi14,
+          macdHist:x.indicators?.macdHist
+        }))
+      })
     });
     const data = await res.json();
     $('aiOutput').innerHTML = simpleMarkdown(data.text || 'Yorum üretilemedi.') + (data.mode ? `<p><small>Mod: ${data.mode}${data.reason ? ' · ' + data.reason : ''}</small></p>` : '');
@@ -244,19 +367,36 @@ function renderWatchList() {
 }
 
 function bootClock() {
-  const now = new Date();
-  const tr = now.toLocaleString('tr-TR', { timeZone:'Europe/Istanbul', hour:'2-digit', minute:'2-digit', second:'2-digit' });
-  if (!$('marketClock').textContent.includes('⏳') && !$('marketClock').textContent.includes('✅')) return;
+  if (!state.autoScan) return;
+  const next = state.lastScanAt ? new Date(state.lastScanAt.getTime() + 15*60*1000) : null;
+  if (next) $('autoScanBtn').textContent = `⏱ Otomatik tarama: Açık · sonraki ${next.toLocaleTimeString('tr-TR')}`;
+}
+
+function toggleAutoScan() {
+  state.autoScan = !state.autoScan;
+  if (state.autoScan) {
+    $('autoScanBtn').className = 'btn secondary';
+    $('autoScanBtn').textContent = '⏱ Otomatik tarama: Açık';
+    scanUniverse();
+    state.autoTimer = setInterval(scanUniverse, 15 * 60 * 1000);
+  } else {
+    $('autoScanBtn').className = 'btn ghost';
+    $('autoScanBtn').textContent = '⏱ Otomatik tarama: Kapalı';
+    if (state.autoTimer) clearInterval(state.autoTimer);
+    state.autoTimer = null;
+  }
 }
 
 $('loadUniverseBtn').addEventListener('click', loadUniverse);
 $('scanBtn').addEventListener('click', scanUniverse);
 $('watchBtn').addEventListener('click', addWatch);
+$('autoScanBtn').addEventListener('click', toggleAutoScan);
 $('aiBtn').addEventListener('click', runAI);
 $('indexSelect').addEventListener('change', loadUniverse);
 $('symbolSearch').addEventListener('input', e => renderSuggestions(e.target.value));
 $('symbolSearch').addEventListener('keydown', e => { if (e.key === 'Enter') selectSymbol(e.target.value.toUpperCase().trim()); });
 document.addEventListener('click', e => { if (!e.target.closest('.searchbox')) $('suggestions').classList.remove('show'); });
 
+renderMarketWidgets('ASELS');
 loadUniverse().then(() => renderWatchList());
 setInterval(bootClock, 1000);

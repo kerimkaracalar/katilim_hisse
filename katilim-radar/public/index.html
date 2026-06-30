@@ -28,6 +28,24 @@
       <b>Not:</b> BIST gerçek zamanlı piyasa verileri lisanslı veri dağıtıcıları üzerinden sağlanır. Bu panel ücretsiz kaynakları kullanır; veri gecikmeli/eksik olabilir. Sinyaller yatırım tavsiyesi değildir.
     </section>
 
+    <section class="panel live-panel">
+      <div class="panel-title">
+        <h2>⚡ Canlı piyasa ekranı</h2>
+        <span>TradingView widget verisi · hesaplamaya doğrudan dahil edilmez</span>
+      </div>
+      <div id="tvTickerTape" class="tv-strip"></div>
+      <div class="live-grid">
+        <div class="tv-box">
+          <h3>BIST katılım endeksleri</h3>
+          <div id="tvIndexOverview"></div>
+        </div>
+        <div class="tv-box">
+          <h3>Seçili hisse anlık özet</h3>
+          <div id="tvSelectedMini"></div>
+        </div>
+      </div>
+    </section>
+
     <section class="control-card">
       <div class="control-grid">
         <label>
@@ -74,6 +92,7 @@
           <div id="suggestions" class="suggestions"></div>
         </div>
         <button id="watchBtn" class="btn ghost">⭐ İzleme listeme ekle</button>
+        <button id="autoScanBtn" class="btn ghost">⏱ Otomatik tarama: Kapalı</button>
       </div>
     </section>
 
@@ -82,6 +101,16 @@
       <div class="summary-card"><div class="k">Taranan</div><div id="scannedCount" class="v">—</div><small>Başarılı veri dönüşü</small></div>
       <div class="summary-card"><div class="k">Pozitif</div><div id="positiveCount" class="v green">—</div><small>Skor ≥ 63</small></div>
       <div class="summary-card"><div class="k">Zayıf</div><div id="weakCount" class="v red">—</div><small>Skor &lt; 47</small></div>
+    </section>
+
+    <section class="panel opportunity-panel">
+      <div class="panel-title">
+        <h2>🎯 Katılım fırsat radarı</h2>
+        <span id="oppMeta">Tarama sonrası teknik fırsatlar burada listelenir.</span>
+      </div>
+      <div id="opportunityGrid" class="opportunity-grid">
+        <div class="empty-card">Henüz fırsat taraması yapılmadı.</div>
+      </div>
     </section>
 
     <main class="grid-main">
@@ -94,7 +123,7 @@
           <table id="resultsTable">
             <thead>
               <tr>
-                <th>Hisse</th><th>Skor</th><th>Fiyat</th><th>Günlük</th><th>RSI</th><th>MACD</th><th>Aylık</th><th>Karar</th>
+                <th>Hisse</th><th>Skor</th><th>Fiyat</th><th>Günlük</th><th>RSI</th><th>MACD</th><th>Aylık</th><th>Fırsat</th>
               </tr>
             </thead>
             <tbody id="resultsBody">
@@ -149,12 +178,23 @@
           <h3>🎯 Destek / direnç</h3>
           <div id="levelGrid" class="level-grid"></div>
         </div>
+        <div class="subpanel">
+          <h3>🧭 Teknik pozisyon planı</h3>
+          <div id="positionPlan" class="position-plan"></div>
+        </div>
+      </div>
+
+      <div class="two-col">
         <div class="subpanel ai-box">
           <div class="ai-head">
             <h3>🤖 AI destekli yorum</h3>
             <button id="aiBtn" class="btn secondary">AI analizi üret</button>
           </div>
           <div id="aiOutput" class="ai-output">Gemini API anahtarı yoksa sistem otomatik teknik özet üretir.</div>
+        </div>
+        <div class="subpanel">
+          <h3>📌 AI veri sınırı</h3>
+          <p class="mini-text">AI yalnızca bu sayfada çekilen fiyat barları, hesaplanan teknik göstergeler, destek/direnç, fırsat skoru ve tarama tablosunu kullanır. TradingView widgetları canlı görsel referanstır; hesaplamaya doğrudan okunmaz.</p>
         </div>
       </div>
 
