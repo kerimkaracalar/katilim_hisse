@@ -123,6 +123,7 @@ async function scanUniverse() {
     $('positiveCount').textContent = state.results.filter(x => x.score >= 63).length;
     $('weakCount').textContent = state.results.filter(x => x.score < 47).length;
     $('scanMeta').textContent = `${data.source} · ${Math.round(performance.now()-started)} ms · Başarısız: ${(data.failed||[]).length}`;
+    if ((data.failed || []).length) console.warn('Başarısız veri kaynakları:', data.failed.slice(0,10));
     setStatus(`✅ Tarama tamamlandı · ${new Date().toLocaleTimeString('tr-TR')}`, 'good');
     state.lastScanAt = new Date();
     renderResults();
@@ -178,7 +179,7 @@ function renderDetail(a) {
   $('scoreRing').style.setProperty('--deg', `${Math.round(a.score * 3.6)}deg`);
   $('detailPrice').textContent = `${fmt(a.price,2)} ${a.currency || 'TRY'}`;
   $('detailChange').className = `change mono ${clsBy(a.changePct)}`;
-  $('detailChange').textContent = `${fmt(a.change,2)} · ${pct(a.changePct)} · Son bar: ${a.lastBar || '—'}`;
+  $('detailChange').textContent = `${fmt(a.change,2)} · ${pct(a.changePct)} · Son bar: ${a.lastBar || '—'} · Veri: ${a.dataProvider || a.provider || '—'}`;
   $('detailVerdict').textContent = a.verdict;
   $('detailVerdict').className = `verdict tag ${tagClass(a.score)}`;
   $('detailMiniText').textContent = miniSummary(a);
@@ -198,7 +199,7 @@ function miniSummary(a) {
   const macd = a.indicators?.macdHist;
   const support = a.levels?.support;
   const res = a.levels?.resistance;
-  return `RSI ${fmt(rsi,1)}, MACD histogram ${fmt(macd,3)}. Yakın destek ${fmt(support,2)}, direnç ${fmt(res,2)}. Teknik skor fiyat trendi, momentum, hacim ve volatilite bileşenlerinden hesaplanır.`;
+  return `RSI ${fmt(rsi,1)}, MACD histogram ${fmt(macd,3)}. Yakın destek ${fmt(support,2)}, direnç ${fmt(res,2)}. Teknik skor fiyat trendi, momentum, hacim ve volatilite bileşenlerinden hesaplanır. Veri kaynağı: ${a.dataSource || a.source || '—'}.`;
 }
 function renderMetrics(a) {
   const m = a.indicators || {};
