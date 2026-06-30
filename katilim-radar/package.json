@@ -1,0 +1,15 @@
+{
+  "name": "katilim-radar-bist",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Borsa Istanbul katılım hisseleri için ücretsiz veri kaynaklı teknik analiz paneli",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "check": "node --check api/market.js && node --check api/scan.js && node --check api/katilim.js && node --check api/ai.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}
