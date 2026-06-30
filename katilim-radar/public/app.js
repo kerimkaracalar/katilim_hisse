@@ -10,7 +10,9 @@ const state = {
   watch: JSON.parse(localStorage.getItem('katilim_watch_v1') || '[]'),
   autoScan: false,
   autoTimer: null,
-  lastScanAt: null
+  lastScanAt: null,
+  cacheWarming: false,
+  quoteCache: {}
 };
 
 function setStatus(text, type='muted') {
@@ -61,7 +63,7 @@ async function refreshQuoteBoard(symbols = defaultQuoteSymbols()) {
   if (!uniq.length) return;
   box.innerHTML = `<div class="empty-card">⏳ ${uniq.length} sembol için fiyat verisi çekiliyor...</div>`;
   try {
-    const res = await fetch(`/api/snapshot?symbols=${encodeURIComponent(uniq.join(','))}&range=3mo`);
+    const res = await fetch(`/api/snapshot?symbols=${encodeURIComponent(uniq.join(','))}&range=3mo&max=${uniq.length}`);
     const data = await res.json();
     const items = data.items || [];
     const failed = data.failed || [];
@@ -70,7 +72,11 @@ async function refreshQuoteBoard(symbols = defaultQuoteSymbols()) {
       renderDiagnostics(data);
       return;
     }
+    items.forEach(q => state.quoteCache[q.symbol] = q);
     box.innerHTML = items.map(q => quoteCard(q)).join('');
+    [...box.querySelectorAll('.quote-card[data-symbol]')].forEach(el => {
+      el.addEventListener('click', () => selectSymbol(el.dataset.symbol));
+    });
     renderDiagnostics(data);
   } catch (err) {
     box.innerHTML = `<div class="empty-card">❌ Fiyat panosu hatası: ${escapeHtml(err.message)}</div>`;
@@ -98,7 +104,6 @@ function renderDiagnostics(data) {
     <div class="diag-row"><span>Süre</span><b>${data?.elapsedMs ? data.elapsedMs + ' ms' : '—'}</b></div>
     ${failed.length ? `<div class="diag-errors"><b>İlk hata:</b><br>${escapeHtml(failed[0].symbol || '')} ${escapeHtml(failed[0].error || '')}</div>` : ''}
   `;
-  [...document.querySelectorAll('.quote-card[data-symbol]')].forEach(el => el.addEventListener('click', () => selectSymbol(el.dataset.symbol)));
 }
 
 function renderSelectedMini(symbol='ASELS') {
@@ -142,43 +147,95 @@ async function loadUniverse() {
     renderSuggestions('');
     renderWatchList();
     refreshQuoteBoard(defaultQuoteSymbols());
+    setTimeout(() => warmCacheBackground(state.universe.map(x => x.symbol)), 800);
   } catch (err) {
     setStatus(`❌ Liste alınamadı: ${err.message}`, 'warning');
   }
 }
 
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+async function warmCacheBackground(symbols) {
+  if (state.cacheWarming || !symbols?.length) return;
+  state.cacheWarming = true;
+  const uniq = [...new Set(symbols)].slice(0, 140);
+  const chunkSize = 8;
+  let ok = 0, fail = 0;
+  try {
+    for (let i = 0; i < uniq.length; i += chunkSize) {
+      const chunk = uniq.slice(i, i + chunkSize);
+      renderDiagnostics({ ok:true, source:'Haftalık cache hazırlanıyor', success:ok, count:uniq.length, elapsedMs:0, failed: fail ? [{symbol:'', error:`${fail} sembolde veri alınamadı`}]:[] });
+      const res = await fetch('/api/cache', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ symbols: chunk, range: $('rangeSelect')?.value || '1y', max: chunk.length })
+      });
+      const data = await res.json();
+      ok += data.success || 0;
+      fail += (data.failed || []).length;
+      await sleep(600);
+    }
+    renderDiagnostics({ ok:true, source:'Haftalık cache hazır · Son hafta canlı çekilir', success:ok, count:uniq.length, elapsedMs:0, failed: fail ? [{symbol:'', error:`${fail} sembol başarısız`}]:[] });
+  } catch (err) {
+    renderDiagnostics({ ok:false, source:'Cache hazırlama', error:err.message, failed:[{symbol:'', error:err.message}] });
+  } finally { state.cacheWarming = false; }
+}
+
 async function scanUniverse() {
   if (!state.universe.length) await loadUniverse();
   const max = Number($('limitSelect').value || 50);
-  const symbols = state.universe.slice(0, max).map(x => x.symbol);
-  if (!symbols.length) return;
-  $('resultsBody').innerHTML = `<tr><td colspan="8" class="empty">⏳ ${symbols.length} katılım hissesi teknik olarak taranıyor...</td></tr>`;
-  setStatus('⏳ Teknik tarama çalışıyor...', 'muted');
-  $('scanMeta').textContent = 'EMA, SMA, RSI, MACD, ATR, Bollinger, hacim ve destek/direnç hesaplanıyor.';
+  const allSymbols = state.universe.slice(0, max).map(x => x.symbol);
+  if (!allSymbols.length) return;
+  state.results = [];
+  const failedAll = [];
   const started = performance.now();
-  try {
-    const res = await fetch('/api/scan', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ symbols, range: $('rangeSelect').value, interval: $('intervalSelect').value, max })
-    });
-    const data = await res.json();
-    state.results = data.results || [];
-    $('scannedCount').textContent = `${data.success || 0}/${data.scanned || 0}`;
+  const chunkSize = 8;
+  $('resultsBody').innerHTML = `<tr><td colspan="8" class="empty">⏳ ${allSymbols.length} katılım hissesi teknik olarak taranıyor...</td></tr>`;
+  setStatus('⏳ Teknik tarama çalışıyor...', 'muted');
+  $('scanMeta').textContent = 'Tarama parça parça yapılır; 1 hafta öncesine kadar cache, son hafta canlı veri kullanılır.';
+  $('scannedCount').textContent = `0/${allSymbols.length}`;
+  $('positiveCount').textContent = '—';
+  $('weakCount').textContent = '—';
+
+  for (let i = 0; i < allSymbols.length; i += chunkSize) {
+    const chunk = allSymbols.slice(i, i + chunkSize);
+    try {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 55000);
+      const res = await fetch('/api/scan', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        signal: ac.signal,
+        body: JSON.stringify({ symbols: chunk, range: $('rangeSelect').value, interval: $('intervalSelect').value, max: chunk.length })
+      });
+      clearTimeout(t);
+      const data = await res.json();
+      state.results = [...state.results, ...(data.results || [])]
+        .sort((a,b) => b.score - a.score);
+      failedAll.push(...(data.failed || []));
+    } catch (err) {
+      failedAll.push(...chunk.map(symbol => ({ symbol, error: err.name === 'AbortError' ? 'Parça tarama zaman aşımı' : err.message })));
+    }
+    $('scannedCount').textContent = `${state.results.length}/${Math.min(i + chunkSize, allSymbols.length)}`;
     $('positiveCount').textContent = state.results.filter(x => x.score >= 63).length;
     $('weakCount').textContent = state.results.filter(x => x.score < 47).length;
-    $('scanMeta').textContent = `${data.source} · ${Math.round(performance.now()-started)} ms · Başarısız: ${(data.failed||[]).length}`;
-    if ((data.failed || []).length && !state.results.length) $('scanMeta').textContent += ` · İlk hata: ${(data.failed[0]?.symbol || '')} ${(data.failed[0]?.error || '').slice(0,120)}`;
-    if ((data.failed || []).length) console.warn('Başarısız veri kaynakları:', data.failed.slice(0,10));
-    setStatus(`✅ Tarama tamamlandı · ${new Date().toLocaleTimeString('tr-TR')}`, 'good');
-    state.lastScanAt = new Date();
+    $('scanMeta').textContent = `İlerleme: ${Math.min(i + chunkSize, allSymbols.length)}/${allSymbols.length} · Başarılı: ${state.results.length} · Hatalı: ${failedAll.length}`;
     renderResults();
     renderOpportunities();
+    await sleep(150);
+  }
+
+  const ms = Math.round(performance.now() - started);
+  $('scanMeta').textContent = `Tarama tamamlandı · ${ms} ms · Başarılı: ${state.results.length}/${allSymbols.length} · Hatalı: ${failedAll.length}`;
+  if (failedAll.length && !state.results.length) $('scanMeta').textContent += ` · İlk hata: ${(failedAll[0]?.symbol || '')} ${(failedAll[0]?.error || '').slice(0,160)}`;
+  if (failedAll.length) console.warn('Başarısız veri kaynakları:', failedAll.slice(0,20));
+  setStatus(`✅ Tarama tamamlandı · ${new Date().toLocaleTimeString('tr-TR')}`, state.results.length ? 'good' : 'warning');
+  state.lastScanAt = new Date();
+  renderResults();
+  renderOpportunities();
+  if (state.results.length) {
     refreshQuoteBoard(state.results.slice(0, 8).map(x => x.symbol));
-    if (state.results.length) selectSymbol(state.results[0].symbol);
-  } catch (err) {
-    $('resultsBody').innerHTML = `<tr><td colspan="8" class="empty">❌ Tarama hatası: ${err.message}</td></tr>`;
-    setStatus(`❌ Tarama hatası`, 'warning');
+    selectSymbol(state.results[0].symbol);
+  } else {
+    $('resultsBody').innerHTML = `<tr><td colspan="8" class="empty">❌ Veri alınamadı. İlk hata: ${escapeHtml(failedAll[0]?.symbol || '')} ${escapeHtml(failedAll[0]?.error || 'Bilinmeyen hata')}</td></tr>`;
   }
 }
 
@@ -203,16 +260,40 @@ function renderResults() {
 }
 
 async function selectSymbol(symbol) {
+  symbol = String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if (!symbol) return;
+  const q = state.quoteCache[symbol];
+  if (q && $('tvSelectedMini')) {
+    $('tvSelectedMini').innerHTML = `
+      <div class="selected-symbol mono">${q.symbol}</div>
+      <div class="selected-price mono">${fmt(q.price,2)} TRY</div>
+      <div class="selected-change mono ${clsBy(q.changePct)}">${fmt(q.change,2)} · ${pct(q.changePct)}</div>
+      <div class="selected-line">Son bar: ${q.lastBar || '—'} · Veri: ${q.provider || '—'}</div>
+      <div class="selected-line">Detaylı teknik analiz yükleniyor...</div>`;
+  }
   let data = state.results.find(x => x.symbol === symbol);
   if (!data) {
     setStatus(`⏳ ${symbol} verisi alınıyor...`, 'muted');
-    const res = await fetch('/api/scan', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ symbols: [symbol], range: $('rangeSelect').value, interval: $('intervalSelect').value, max: 1 })
-    });
-    const json = await res.json();
-    data = json.results?.[0];
-    if (!data) return setStatus(`❌ ${symbol} verisi alınamadı`, 'warning');
+    try {
+      const res = await fetch('/api/scan', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ symbols: [symbol], range: $('rangeSelect').value, interval: $('intervalSelect').value, max: 1 })
+      });
+      const json = await res.json();
+      data = json.results?.[0];
+      if (!data) {
+        const msg = json.failed?.[0]?.error || json.error || 'Veri alınamadı';
+        setStatus(`❌ ${symbol} verisi alınamadı`, 'warning');
+        if ($('tvSelectedMini')) $('tvSelectedMini').innerHTML += `<div class="diag-errors">${escapeHtml(msg)}</div>`;
+        return;
+      }
+      state.results = [...state.results.filter(x => x.symbol !== symbol), data].sort((a,b)=>b.score-a.score);
+      renderResults(); renderOpportunities();
+    } catch (err) {
+      setStatus(`❌ ${symbol} verisi alınamadı`, 'warning');
+      if ($('tvSelectedMini')) $('tvSelectedMini').innerHTML += `<div class="diag-errors">${escapeHtml(err.message)}</div>`;
+      return;
+    }
   }
   state.selected = data;
   renderDetail(data);
