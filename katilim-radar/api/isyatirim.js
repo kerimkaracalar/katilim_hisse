@@ -98,11 +98,12 @@ export async function fetchIsYatirimBars(symbol, range = '1y') {
   if (!s) throw new Error('Geçersiz sembol');
   const startdate = formatTRDate(startDateForRange(range));
   const enddate = formatTRDate(new Date());
-  const url = `${ISY_BASE}?hisse=${encodeURIComponent(s)}&startdate=${encodeURIComponent(startdate)}&enddate=${encodeURIComponent(enddate)}`;
+  const endWithJson = `${enddate}.json`;
+  const url = `${ISY_BASE}?hisse=${encodeURIComponent(s)}&startdate=${encodeURIComponent(startdate)}&enddate=${encodeURIComponent(endWithJson)}`;
   const r = await fetch(url, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 KatilimRadar/1.3',
-      'Accept': 'application/json,text/plain,*/*',
+      'User-Agent': 'Mozilla/5.0 (compatible; KatilimRadar/1.4; +https://vercel.app)',
+      'Accept': 'application/json, text/plain, */*',
       'Referer': 'https://www.isyatirim.com.tr/tr-tr/analiz/hisse/Sayfalar/Tarihsel-Fiyat-Bilgileri.aspx'
     }
   });
@@ -110,9 +111,9 @@ export async function fetchIsYatirimBars(symbol, range = '1y') {
   if (!r.ok) throw new Error(`İş Yatırım HTTP ${r.status}: ${text.slice(0, 160)}`);
   let json;
   try { json = JSON.parse(text); } catch { throw new Error(`İş Yatırım JSON okunamadı: ${text.slice(0, 160)}`); }
-  const rows = Array.isArray(json?.value) ? json.value : Array.isArray(json) ? json : [];
+  const rows = Array.isArray(json?.value) ? json.value : Array.isArray(json?.Value) ? json.Value : Array.isArray(json) ? json : [];
   const bars = rows.map(normalizeIsYRow).filter(Boolean).sort((a,b) => a.time - b.time);
-  if (!bars.length) throw new Error('İş Yatırım veri döndürmedi');
+  if (!bars.length) throw new Error(`İş Yatırım veri döndürmedi (${s}, ${startdate}-${enddate})`);
   return {
     source: 'İş Yatırım HisseTekil',
     sourceUrl: url,
@@ -151,7 +152,7 @@ export async function fetchYahooBars(symbol, range = '1y', interval = '1d') {
   const y = normalizeYahooSymbol(symbol);
   if (!y) throw new Error('Geçersiz sembol');
   const url = `${YAHOO_BASE}${encodeURIComponent(y)}?range=${encodeURIComponent(range)}&interval=${encodeURIComponent(interval)}&includePrePost=false&events=div%2Csplits`;
-  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 KatilimRadar/1.3', 'Accept': 'application/json,*/*' } });
+  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KatilimRadar/1.4; +https://vercel.app)', 'Accept': 'application/json,*/*' } });
   const raw = await r.text();
   if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}: ${raw.slice(0, 160)}`);
   const json = JSON.parse(raw);
