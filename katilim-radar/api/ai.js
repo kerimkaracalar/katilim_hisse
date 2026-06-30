@@ -21,9 +21,12 @@ function fallback(analysis) {
   if (!analysis) return 'Analiz verisi alınamadı.';
   const ind = analysis.indicators || {};
   const lvl = analysis.levels || {};
+  const plan = analysis.positionPlan || {};
+  const opp = analysis.opportunity || {};
   const plus = (analysis.reasons || []).map(x => `• ${x}`).join('\n');
   const minus = (analysis.cautions || []).map(x => `• ${x}`).join('\n');
-  return `## ${analysis.symbol} teknik özet\n\n**Genel görünüm:** ${analysis.verdict} — teknik skor **${analysis.score}/100**. Son fiyat ${analysis.price} ${analysis.currency || 'TRY'}; günlük değişim ${analysis.changePct ?? '—'}%.\n\n**Trend:** Fiyat EMA20 (${ind.ema20 ?? '—'}) ve EMA50 (${ind.ema50 ?? '—'}) seviyelerine göre değerlendiriliyor. RSI14 ${ind.rsi14 ?? '—'}, MACD histogram ${ind.macdHist ?? '—'}.\n\n**Destek/direnç:** Yakın destek ${lvl.support ?? '—'}, direnç ${lvl.resistance ?? '—'}, ATR bazlı takip seviyesi ${lvl.stop ?? '—'}, hedef bölgeler ${lvl.target1 ?? '—'} / ${lvl.target2 ?? '—'}.\n\n**Olumlu sinyaller**\n${plus || '• Net olumlu sinyal sınırlı.'}\n\n**Risk / dikkat**\n${minus || '• Belirgin teknik uyarı sınırlı.'}\n\nBu çıktı yalnızca teknik analiz amaçlıdır; yatırım tavsiyesi değildir.`;
+  const oppLines = (opp.reasons || []).map(x => `• ${x}`).join('\n');
+  return `## ${analysis.symbol} teknik pozisyon özeti\n\n**Genel görünüm:** ${analysis.verdict} — teknik skor **${analysis.score}/100**. Son fiyat ${analysis.price} ${analysis.currency || 'TRY'}; günlük değişim ${analysis.changePct ?? '—'}%.\n\n**Fırsat durumu:** ${opp.label || 'Fırsat bekleniyor'} — fırsat skoru **${opp.score ?? analysis.score}/100**.\n${oppLines || '• Net fırsat sinyali henüz oluşmadı.'}\n\n**Pozisyon planı:** ${plan.stance || 'İZLE'}. Takip bölgesi ${plan.entryZone?.low ?? '—'} - ${plan.entryZone?.high ?? '—'}, geçersizleşme/takip stop ${plan.invalidation ?? lvl.stop ?? '—'}, hedefler ${plan.target1 ?? lvl.target1 ?? '—'} / ${plan.target2 ?? lvl.target2 ?? '—'}. Risk/ödül yaklaşık ${plan.riskReward1 ?? '—'} / ${plan.riskReward2 ?? '—'}.\n\n**Trend:** Fiyat EMA20 (${ind.ema20 ?? '—'}) ve EMA50 (${ind.ema50 ?? '—'}) seviyelerine göre değerlendiriliyor. RSI14 ${ind.rsi14 ?? '—'}, MACD histogram ${ind.macdHist ?? '—'}.\n\n**Destek/direnç:** Yakın destek ${lvl.support ?? '—'}, direnç ${lvl.resistance ?? '—'}, ATR bazlı takip seviyesi ${lvl.stop ?? '—'}.\n\n**Olumlu sinyaller**\n${plus || '• Net olumlu sinyal sınırlı.'}\n\n**Risk / dikkat**\n${minus || '• Belirgin teknik uyarı sınırlı.'}\n\nBu çıktı yalnızca teknik analiz amaçlıdır; yatırım tavsiyesi değildir.`;
 }
 
 export default async function handler(req, res) {

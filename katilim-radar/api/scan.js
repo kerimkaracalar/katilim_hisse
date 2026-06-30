@@ -163,8 +163,12 @@ function analyze(symbol, bars, meta={}) {
   const st = last(stochastic(bars,14));
   const vol20 = mean(volumes.slice(-20));
   const volRatio = vol20 ? last(volumes) / vol20 : null;
-  const hi20 = Math.max(...highs.slice(-20));
-  const lo20 = Math.min(...lows.slice(-20));
+  const last20Highs = highs.slice(-20);
+  const last20Lows = lows.slice(-20);
+  const hi20 = Math.max(...last20Highs);
+  const lo20 = Math.min(...last20Lows);
+  const prevHi20 = highs.length > 21 ? Math.max(...highs.slice(-21, -1)) : hi20;
+  const prevLo20 = lows.length > 21 ? Math.min(...lows.slice(-21, -1)) : lo20;
   const hi52 = Math.max(...highs.slice(-252));
   const lo52 = Math.min(...lows.slice(-252));
   const ret5 = closes.length > 5 ? pct(c, closes[closes.length-6]) : null;
@@ -210,6 +214,54 @@ function analyze(symbol, bars, meta={}) {
   const target1 = a14 ? c + 1.5 * a14 : resistance;
   const target2 = a14 ? c + 2.5 * a14 : hi52;
 
+  const nearSupportPct = support ? ((c - support) / support) * 100 : null;
+  const breakout = c > prevHi20 && volRatio && volRatio >= 1.15;
+  const pullback = nearSupportPct != null && nearSupportPct >= 0 && nearSupportPct <= 4 && c >= e50 && r14 >= 35 && r14 <= 62;
+  const trendContinuation = score >= 68 && c > e20 && e20 > e50 && mh > 0 && r14 < 72;
+  const oversoldReversal = r14 <= 35 && bb && c <= bb.lower * 1.03 && score >= 48;
+  let opportunityType = 'YOK';
+  let opportunityLabel = 'Fırsat bekleniyor';
+  let opportunityScore = score;
+  const opportunityReasons = [];
+  if (breakout) {
+    opportunityType = 'BREAKOUT'; opportunityLabel = 'Hacimli direnç kırılımı'; opportunityScore += 10;
+    opportunityReasons.push('Fiyat önceki 20 günlük zirveyi hacim desteğiyle aşıyor');
+  } else if (trendContinuation) {
+    opportunityType = 'TREND'; opportunityLabel = 'Trend devam fırsatı'; opportunityScore += 7;
+    opportunityReasons.push('EMA20 > EMA50 ve MACD pozitif; fiyat kısa trend üzerinde');
+  } else if (pullback) {
+    opportunityType = 'PULLBACK'; opportunityLabel = 'Destek bölgesi takibi'; opportunityScore += 6;
+    opportunityReasons.push('Fiyat destek bölgesine yakın ve ana trend bozulmamış');
+  } else if (oversoldReversal) {
+    opportunityType = 'REVERSAL'; opportunityLabel = 'Aşırı satım tepki adayı'; opportunityScore += 4;
+    opportunityReasons.push('RSI düşük ve fiyat Bollinger alt bandına yakın');
+  }
+  if (volRatio && volRatio >= 1.2) opportunityReasons.push('Hacim 20 günlük ortalamanın üzerinde');
+  if (ret20 > 0) opportunityReasons.push('Aylık momentum pozitif');
+  if (r14 > 75) { opportunityScore -= 10; opportunityReasons.push('RSI aşırı alımda olduğu için takip temkinli olmalı'); }
+  opportunityScore = Math.max(0, Math.min(100, opportunityScore));
+
+  const entryLow = pullback ? support : (a14 ? Math.max(support, c - 0.6 * a14) : c * 0.98);
+  const entryHigh = breakout ? c : (a14 ? Math.min(c, c + 0.25 * a14) : c * 1.01);
+  const risk = c - stop;
+  const rr1 = risk > 0 ? (target1 - c) / risk : null;
+  const rr2 = risk > 0 ? (target2 - c) / risk : null;
+  let stance = 'BEKLE / İZLE';
+  if (opportunityScore >= 75 && risk > 0 && rr1 >= 0.8) stance = 'POZİTİF TEKNİK TAKİP';
+  else if (opportunityScore >= 62) stance = 'KONTROLLÜ İZLEME';
+  else if (score < 47) stance = 'ZAYIF / UZAK DUR';
+  const positionPlan = {
+    stance,
+    entryZone: { low: round(entryLow,2), high: round(entryHigh,2) },
+    invalidation: round(stop,2),
+    target1: round(target1,2),
+    target2: round(target2,2),
+    riskReward1: round(rr1,2),
+    riskReward2: round(rr2,2),
+    horizon: interval === '1wk' ? 'Orta vade / haftalık takip' : 'Kısa-orta vade / günlük takip',
+    note: 'Bu plan teknik seviyelerden üretilir; emir, tavsiye veya kesin al/sat yönlendirmesi değildir.'
+  };
+
   return {
     symbol: stripIS(symbol),
     price: round(c,2),
@@ -230,8 +282,10 @@ function analyze(symbol, bars, meta={}) {
       bollingerUpper: round(bb?.upper,2), bollingerMid: round(bb?.mid,2), bollingerLower: round(bb?.lower,2), bollingerWidthPct: round(bb?.width,2),
       stochastic14: round(st,2), volumeRatio20: round(volRatio,2)
     },
-    levels: { support: round(support,2), resistance: round(resistance,2), stop: round(stop,2), target1: round(target1,2), target2: round(target2,2), low52: round(lo52,2), high52: round(hi52,2) },
+    levels: { support: round(support,2), resistance: round(resistance,2), stop: round(stop,2), target1: round(target1,2), target2: round(target2,2), low52: round(lo52,2), high52: round(hi52,2), prevHigh20: round(prevHi20,2), prevLow20: round(prevLo20,2) },
     returns: { d5: round(ret5,2), d20: round(ret20,2), d60: round(ret60,2), ytd: round(retYtd,2) },
+    opportunity: { type: opportunityType, label: opportunityLabel, score: round(opportunityScore,0), reasons: opportunityReasons.slice(0,4) },
+    positionPlan,
     reasons: reasons.slice(0,5),
     cautions: cautions.slice(0,5)
   };

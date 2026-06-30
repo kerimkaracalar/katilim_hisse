@@ -108,10 +108,41 @@ function detectDelimiter(line) {
 }
 
 function parseCSV(text) {
-  const lines = text.split(/\r?\n/).filter(Boolean);
+  const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   if (!lines.length) return [];
+
   const delim = detectDelimiter(lines[0]);
   const rows = lines.map(l => l.split(delim).map(x => x.trim().replace(/^"|"$/g,'')));
+
+  // BIST'in güncel katılım CSV formatı genelde başlıksızdır:
+  // ACSEL.E;ACIPAYAM SELULOZ;XKTUM;BIST KATILIM TUM;BIST PARTICIPATION ALL SHARES;27/04/2026
+  // Aynı hisse XK030/XK050/XK100/XKTUM satırlarında tekrar edebilir. Bu yüzden önce bu formatı deneriz.
+  const grouped = new Map();
+  let rowStyleCount = 0;
+
+  for (const r of rows) {
+    const rawSymbol = cleanCell(r[0] || '');
+    const symbol = rawSymbol.replace(/\.E$/i, '');
+    const indexCode = cleanCell(r[2] || '');
+    if (/^[A-Z0-9]{2,8}$/.test(symbol) && /^XK(030|050|100|TUM)$/.test(indexCode)) {
+      rowStyleCount++;
+      if (!grouped.has(symbol)) {
+        grouped.set(symbol, { symbol, name: r[1] || symbol, sector: '', indexes: new Set() });
+      }
+      grouped.get(symbol).indexes.add(indexCode);
+    }
+  }
+
+  if (rowStyleCount > 0) {
+    return Array.from(grouped.values()).map(x => ({
+      symbol: x.symbol,
+      name: x.name,
+      sector: x.sector,
+      indexes: Array.from(x.indexes.size ? x.indexes : new Set(['XKTUM']))
+    }));
+  }
+
+  // Eski/başlıklı format fallback'i
   const header = rows[0].map(h => h.toLocaleUpperCase('tr-TR'));
   const symbolIdx = header.findIndex(h => /KOD|CODE|SEMBOL|SYMBOL|BILEŞEN|BILESEN/.test(h));
   const nameIdx = header.findIndex(h => /AD|UNVAN|NAME/.test(h));
@@ -120,9 +151,9 @@ function parseCSV(text) {
 
   const out = [];
   for (const r of rows.slice(1)) {
-    let symbol = symbolIdx >= 0 ? cleanCell(r[symbolIdx]) : '';
+    let symbol = symbolIdx >= 0 ? cleanCell(r[symbolIdx]).replace(/\.E$/i,'') : '';
     if (!symbol) {
-      const possible = r.map(cleanCell).find(x => /^[A-Z0-9]{3,6}(?:\.E)?$/.test(x));
+      const possible = r.map(cleanCell).map(x => x.replace(/\.E$/i,'')).find(x => /^[A-Z0-9]{3,6}$/.test(x));
       symbol = possible || '';
     }
     if (!/^[A-Z0-9]{3,6}$/.test(symbol)) continue;
