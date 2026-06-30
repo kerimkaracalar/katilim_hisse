@@ -1,6 +1,6 @@
 {
   "name": "katilim-radar-bist",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Borsa Istanbul katılım hisseleri için ücretsiz veri kaynaklı teknik analiz paneli",
   "type": "module",
