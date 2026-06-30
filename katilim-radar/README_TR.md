@@ -1,47 +1,38 @@
-# Katılım Radar BIST v1.4 – Veri Kaynağı Düzeltmeli Sürüm
+# Katılım Radar BIST v1.5
 
-Bu sürümün odağı veri çekme problemidir.
+Bu sürüm veri katmanına odaklanır.
 
-## Düzeltilen ana sorun
+## Ana değişiklikler
 
-İş Yatırım HisseTekil endpointinde tarihsel veri URL'sinin sonunda `.json` uzantısı gerekir. Önceki sürümde URL şu şekilde kuruluyordu:
+- İş Yatırım `HisseTekil` veri çekimi daha dayanıklı hale getirildi.
+- Aynı endpoint için hem `.json` uzantılı hem uzantısız format denenir.
+- `Website` / `WebSite` path varyasyonları denenir.
+- 1 hafta öncesine kadar olan tarihsel veri server memory cache'e alınır.
+- Son 1 haftalık veri her sorguda canlı/güncel kaynaktan çekilip cache'li geçmişle birleştirilir.
+- `/api/cache` endpointi eklendi. Katılım evreni arka planda küçük parçalar halinde cache'e hazırlanır.
+- Teknik tarama artık tek büyük istek yerine 8'li parçalar halinde çalışır; bu Vercel timeout riskini azaltır.
+- Fiyat panosu kartları tıklanabilir hale getirildi; karttan hisse detayına gidilir.
+- Tarama sırasında sonuçlar parça parça ekranda görünür.
 
-```text
-...&enddate=30-06-2026
-```
+## Test endpointleri
 
-Doğru kullanım:
-
-```text
-...&enddate=30-06-2026.json
-```
-
-Bu sürümde `api/isyatirim.js` buna göre düzeltildi.
-
-## Veri mimarisi
-
-1. Ana kaynak: İş Yatırım HisseTekil günlük tarihsel veri
-2. Fallback: Yahoo Finance chart proxy
-3. Teknik analiz: çekilen OHLC + hacim barlarından hesaplanır
-4. TradingView: yalnızca dış grafik/link görsel referansı; hesaplamaya dahil edilmez
-
-## Yeni ekran düzeni
-
-Çalışmayan TradingView endeks widgetları ana ekrandan çıkarıldı. Yerine sistemin gerçekten çektiği verilerden oluşan fiyat panosu eklendi. Böylece ekranda görülen fiyatlar ile teknik analiz motorunun kullandığı veri aynı kaynaklardan gelir.
-
-## Deploy sonrası test
-
-Önce bu endpointleri açın:
-
-```text
+```txt
 /api/history?symbol=ASELS&range=1y
 /api/market?symbol=ASELS&range=1y&interval=1d
 /api/snapshot?symbols=ASELS,BIMAS,TUPRS&range=3mo
 /api/scan?symbols=ASELS,BIMAS,TUPRS&range=1y&interval=1d
+/api/cache?symbols=ASELS,BIMAS,TUPRS&range=1y
 ```
 
-Başarılı yanıtta `provider: "isyatirim"` veya fallback olarak `provider: "yahoo"` görmelisiniz.
+## Veri mantığı
+
+```txt
+TradingView widgetları = görsel/anlık referans
+İş Yatırım HisseTekil = ana OHLC/hacim ve teknik analiz verisi
+Yahoo Finance = fallback
+AI = yalnızca çekilen bar verileri + teknik göstergeler + fırsat skoru üzerinden yorum
+```
 
 ## Not
 
-BIST gerçek zamanlı verileri lisanslı veri sağlayıcılarına tabidir. Bu sistem ücretsiz/gecikmeli kaynaklarla teknik analiz üretir ve yatırım tavsiyesi değildir.
+BIST gerçek zamanlı verisi lisanslıdır. Bu sistem ücretsiz ve gecikmeli kaynakları kullanır; yatırım tavsiyesi değildir.
