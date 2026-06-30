@@ -21,3 +21,15 @@
 .position-plan{margin-top:8px}.plan-stance{margin-bottom:10px}.plan-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.plan-grid .level .v{font-size:13px}.plan-grid small{display:block;margin-top:3px}.ai-box{grid-column:auto}
 @media(max-width:980px){.opportunity-grid{grid-template-columns:repeat(2,1fr)}.plan-grid{grid-template-columns:1fr}}
 @media(max-width:620px){.opportunity-grid{grid-template-columns:1fr}.opp-data{grid-template-columns:1fr}}
+
+/* v1.4 veri panosu düzeltmeleri */
+.quote-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.quote-card{background:var(--panel2);border:1px solid var(--border);border-radius:13px;padding:12px;text-align:left;color:var(--text);cursor:pointer;font-family:inherit;transition:.15s;min-height:112px}
+.quote-card:hover{transform:translateY(-1px);border-color:rgba(87,152,255,.45);background:#18243a}
+.quote-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.quote-price{font-size:24px;font-weight:800;margin-bottom:4px}
+.quote-sub{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quote-meta{margin-top:8px;color:var(--muted);font-size:11px}
+.data-box{min-height:240px}.diagnostic-box,.selected-data-card{padding:14px}.diag-row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding:9px 0;color:var(--muted);font-size:13px}.diag-row b{color:var(--text);text-align:right}.diag-errors{margin-top:10px;background:rgba(255,97,112,.08);border:1px solid rgba(255,97,112,.22);border-radius:10px;padding:10px;color:#ffb7c0;font-size:12px}.selected-symbol{font-size:18px;font-weight:800}.selected-price{font-size:32px;font-weight:900;margin:8px 0}.selected-change{font-size:14px;margin-bottom:10px}.selected-line{color:var(--muted);font-size:13px;margin:8px 0}.tv-link{display:inline-flex;margin-top:8px;color:#79a9ff;text-decoration:none;font-weight:800;font-size:13px}.tv-link:hover{text-decoration:underline}.empty-card{background:var(--panel2);border:1px dashed var(--border);border-radius:12px;color:var(--muted);padding:18px;text-align:center;font-size:13px}
+@media(max-width:980px){.quote-strip{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){.quote-strip{grid-template-columns:1fr}}

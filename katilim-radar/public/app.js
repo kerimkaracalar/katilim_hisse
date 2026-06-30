@@ -43,38 +43,82 @@ function addTVScript(container, src, payload) {
   script.text = JSON.stringify(payload);
   container.appendChild(script);
 }
+
+function defaultQuoteSymbols() {
+  const fromUniverse = state.universe.slice(0, 8).map(x => x.symbol);
+  return fromUniverse.length ? fromUniverse : ['ASELS','BIMAS','TUPRS','THYAO','EREGL','KCHOL','PETKM','SASA'];
+}
+
 function renderMarketWidgets(selectedSymbol='ASELS') {
-  const ticker = tvContainer('tvTickerTape');
-  addTVScript(ticker, 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js', {
-    symbols: [
-      { proName:'BIST:XK100', title:'Katılım 100' },
-      { proName:'BIST:XK050', title:'Katılım 50' },
-      { proName:'BIST:XK030', title:'Katılım 30' },
-      { proName:'BIST:XKTUM', title:'Katılım Tüm' },
-      { proName:'BIST:XU100', title:'BIST 100' },
-      { proName:'FX_IDC:USDTRY', title:'USD/TRY' }
-    ],
-    showSymbolLogo:true, isTransparent:true, displayMode:'adaptive', colorTheme:'dark', locale:'tr'
-  });
-
-  const overview = tvContainer('tvIndexOverview');
-  addTVScript(overview, 'https://s3.tradingview.com/external-embedding/embed-widget-symbol-overview.js', {
-    symbols: [['BIST:XK100|1D'], ['BIST:XK050|1D'], ['BIST:XK030|1D'], ['BIST:XKTUM|1D']],
-    chartOnly:false, width:'100%', height:320, locale:'tr', colorTheme:'dark', autosize:true,
-    showVolume:false, showMA:true, hideDateRanges:false, scalePosition:'right', valuesTracking:'1',
-    changeMode:'price-and-percent', chartType:'area', isTransparent:true
-  });
-
+  refreshQuoteBoard(defaultQuoteSymbols());
   renderSelectedMini(selectedSymbol);
 }
+
+async function refreshQuoteBoard(symbols = defaultQuoteSymbols()) {
+  const box = $('quoteStrip');
+  if (!box) return;
+  const uniq = [...new Set(symbols.map(s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g,'')).filter(Boolean))].slice(0, 12);
+  if (!uniq.length) return;
+  box.innerHTML = `<div class="empty-card">⏳ ${uniq.length} sembol için fiyat verisi çekiliyor...</div>`;
+  try {
+    const res = await fetch(`/api/snapshot?symbols=${encodeURIComponent(uniq.join(','))}&range=3mo`);
+    const data = await res.json();
+    const items = data.items || [];
+    const failed = data.failed || [];
+    if (!items.length) {
+      box.innerHTML = `<div class="empty-card">❌ Fiyat verisi alınamadı. İlk hata: ${escapeHtml(failed[0]?.error || data.error || 'Bilinmeyen hata')}</div>`;
+      renderDiagnostics(data);
+      return;
+    }
+    box.innerHTML = items.map(q => quoteCard(q)).join('');
+    renderDiagnostics(data);
+  } catch (err) {
+    box.innerHTML = `<div class="empty-card">❌ Fiyat panosu hatası: ${escapeHtml(err.message)}</div>`;
+    renderDiagnostics({ ok:false, error:err.message });
+  }
+}
+
+function quoteCard(q) {
+  return `<button class="quote-card" data-symbol="${q.symbol}">
+    <div class="quote-top"><b class="mono">${q.symbol}</b><span class="mono ${clsBy(q.changePct)}">${pct(q.changePct)}</span></div>
+    <div class="quote-price mono">${fmt(q.price,2)}</div>
+    <div class="quote-sub">${escapeHtml(getName(q.symbol))}</div>
+    <div class="quote-meta">${q.lastBar || '—'} · ${q.provider || '—'}</div>
+  </button>`;
+}
+
+function renderDiagnostics(data) {
+  const box = $('dataDiagnostics');
+  if (!box) return;
+  const failed = data?.failed || [];
+  box.innerHTML = `
+    <div class="diag-row"><span>Durum</span><b class="${data?.ok === false ? 'red' : 'green'}">${data?.ok === false ? 'Hata' : 'Bağlantı çalıştı'}</b></div>
+    <div class="diag-row"><span>Başarılı</span><b>${data?.success ?? data?.items?.length ?? 0}/${data?.count ?? '—'}</b></div>
+    <div class="diag-row"><span>Kaynak</span><b>${escapeHtml(data?.source || 'İş Yatırım primary + Yahoo fallback')}</b></div>
+    <div class="diag-row"><span>Süre</span><b>${data?.elapsedMs ? data.elapsedMs + ' ms' : '—'}</b></div>
+    ${failed.length ? `<div class="diag-errors"><b>İlk hata:</b><br>${escapeHtml(failed[0].symbol || '')} ${escapeHtml(failed[0].error || '')}</div>` : ''}
+  `;
+  [...document.querySelectorAll('.quote-card[data-symbol]')].forEach(el => el.addEventListener('click', () => selectSymbol(el.dataset.symbol)));
+}
+
 function renderSelectedMini(symbol='ASELS') {
   if (!$('tvSelectedMini')) return;
   const clean = String(symbol || 'ASELS').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  const mini = tvContainer('tvSelectedMini');
-  addTVScript(mini, 'https://s3.tradingview.com/external-embedding/embed-widget-symbol-info.js', {
-    symbol:`BIST:${clean}`, width:'100%', locale:'tr', colorTheme:'dark', isTransparent:true
-  });
+  const existing = state.results.find(x => x.symbol === clean);
+  if (existing) {
+    $('tvSelectedMini').innerHTML = `
+      <div class="selected-symbol mono">${existing.symbol}</div>
+      <div class="selected-price mono">${fmt(existing.price,2)} ${existing.currency || 'TRY'}</div>
+      <div class="selected-change mono ${clsBy(existing.changePct)}">${fmt(existing.change,2)} · ${pct(existing.changePct)}</div>
+      <div class="selected-line">Skor: <b>${existing.score}/100</b> · ${escapeHtml(existing.verdict)}</div>
+      <div class="selected-line">Veri: ${escapeHtml(existing.dataProvider || existing.provider || '—')} · Son bar: ${existing.lastBar || '—'}</div>
+      <a class="tv-link" href="https://www.tradingview.com/chart/?symbol=BIST:${existing.symbol}" target="_blank" rel="noopener">TradingView grafiğinde aç</a>
+    `;
+    return;
+  }
+  $('tvSelectedMini').innerHTML = `<div class="empty-card">${clean} için teknik veri henüz yüklenmedi. Tarama yapın veya hisse seçin.</div>`;
 }
+
 
 async function loadUniverse() {
   const index = $('indexSelect').value;
@@ -97,6 +141,7 @@ async function loadUniverse() {
     if (data.warning) console.warn(data.warning);
     renderSuggestions('');
     renderWatchList();
+    refreshQuoteBoard(defaultQuoteSymbols());
   } catch (err) {
     setStatus(`❌ Liste alınamadı: ${err.message}`, 'warning');
   }
@@ -123,11 +168,13 @@ async function scanUniverse() {
     $('positiveCount').textContent = state.results.filter(x => x.score >= 63).length;
     $('weakCount').textContent = state.results.filter(x => x.score < 47).length;
     $('scanMeta').textContent = `${data.source} · ${Math.round(performance.now()-started)} ms · Başarısız: ${(data.failed||[]).length}`;
+    if ((data.failed || []).length && !state.results.length) $('scanMeta').textContent += ` · İlk hata: ${(data.failed[0]?.symbol || '')} ${(data.failed[0]?.error || '').slice(0,120)}`;
     if ((data.failed || []).length) console.warn('Başarısız veri kaynakları:', data.failed.slice(0,10));
     setStatus(`✅ Tarama tamamlandı · ${new Date().toLocaleTimeString('tr-TR')}`, 'good');
     state.lastScanAt = new Date();
     renderResults();
     renderOpportunities();
+    refreshQuoteBoard(state.results.slice(0, 8).map(x => x.symbol));
     if (state.results.length) selectSymbol(state.results[0].symbol);
   } catch (err) {
     $('resultsBody').innerHTML = `<tr><td colspan="8" class="empty">❌ Tarama hatası: ${err.message}</td></tr>`;

@@ -30,18 +30,20 @@
 
     <section class="panel live-panel">
       <div class="panel-title">
-        <h2>⚡ Canlı piyasa ekranı</h2>
-        <span>TradingView widget verisi · hesaplamaya doğrudan dahil edilmez</span>
+        <h2>⚡ Fiyat panosu</h2>
+        <span>Hesaplamada kullanılan veri · İş Yatırım günlük/gecikmeli veri + fallback kaynaklar</span>
       </div>
-      <div id="tvTickerTape" class="tv-strip"></div>
+      <div id="quoteStrip" class="quote-strip">
+        <div class="empty-card">Fiyat panosu yükleniyor...</div>
+      </div>
       <div class="live-grid">
-        <div class="tv-box">
-          <h3>BIST katılım endeksleri</h3>
-          <div id="tvIndexOverview"></div>
+        <div class="tv-box data-box">
+          <h3>Veri kaynağı / bağlantı testi</h3>
+          <div id="dataDiagnostics" class="diagnostic-box">Henüz test yapılmadı.</div>
         </div>
-        <div class="tv-box">
-          <h3>Seçili hisse anlık özet</h3>
-          <div id="tvSelectedMini"></div>
+        <div class="tv-box data-box">
+          <h3>Seçili hisse fiyat özeti</h3>
+          <div id="tvSelectedMini" class="selected-data-card">Henüz hisse seçilmedi.</div>
         </div>
       </div>
     </section>
