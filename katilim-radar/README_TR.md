@@ -1,64 +1,89 @@
-# Katılım Radar BIST v1.2
+# Katılım Radar BIST v1.3
 
-Bu sürümde amaç ikiye ayrıldı:
+Borsa İstanbul katılım hisseleri için teknik analiz, fırsat radarı ve AI destekli pozisyon takip planı.
 
-1. **TradingView widgetları**: Anlık/görsel fiyat takibi için kullanılır. Widget içindeki veri sayfa içi teknik hesaplamaya doğrudan okunmaz.
-2. **Teknik analiz motoru**: `/api/scan` üzerinden ücretsiz chart verisini çeker, EMA/SMA/RSI/MACD/ATR/Bollinger/Stochastic/hacim/destek-direnç hesaplar ve fırsat skorları üretir.
+## v1.3 veri kaynağı düzeltmesi
 
-## Yeni özellikler
+Bu sürümde odak tamamen veri çekme tarafıdır.
 
-- Katılım fırsat radarı
-- Fırsat türleri:
-  - Hacimli direnç kırılımı
-  - Trend devam fırsatı
-  - Destek bölgesi takibi
-  - Aşırı satım tepki adayı
-- Teknik pozisyon planı:
-  - Takip bölgesi
-  - Geçersizleşme/takip stop
-  - Hedef 1 / hedef 2
-  - Risk/ödül oranı
-  - Vade notu
-- AI analizi artık bu verileri kullanır:
-  - Çekilen fiyat barları
-  - Teknik göstergeler
-  - Destek/direnç
-  - Fırsat skoru
-  - Pozisyon planı
-  - Evren taramasındaki en güçlü adaylar
-- Otomatik tarama butonu: sayfa açıkken 15 dakikada bir yeniden tarama yapar.
+Yeni öncelik sırası:
 
-## Vercel yapı
+1. **İş Yatırım HisseTekil** günlük tarihsel fiyat verisi  
+   `/api/history?symbol=ASELS&range=1y`
+2. **Yahoo Finance chart proxy** fallback  
+   `/api/market?symbol=ASELS&range=1y&interval=1d`
+3. **TradingView widgetları** sadece görsel/canlı takip içindir; teknik hesaplamaya doğrudan dahil edilmez.
 
-Klasör yapısı:
+> Not: BIST gerçek zamanlı piyasa verileri lisanslı veri dağıtıcıları üzerinden sağlanır. Bu panel ücretsiz/gecikmeli kaynaklar kullanır. Çıktılar yatırım tavsiyesi değildir.
 
-```text
+## Yeni API endpointleri
+
+### 1) İş Yatırım tarihsel veri testi
+
+```txt
+/api/history?symbol=ASELS&range=1y
+```
+
+Başarılıysa JSON içinde `bars` dizisi dolu gelir.
+
+### 2) Ana market endpointi
+
+```txt
+/api/market?symbol=ASELS&range=1y&interval=1d
+```
+
+Önce İş Yatırım denenir, olmazsa Yahoo fallback denenir.
+
+### 3) Çoklu son fiyat snapshot
+
+```txt
+/api/snapshot?symbols=ASELS,BIMAS,TUPRS&range=1mo
+```
+
+Son bar, değişim ve kaynak bilgisini verir.
+
+### 4) Teknik tarama
+
+```txt
+/api/scan?symbols=ASELS,BIMAS,TUPRS&range=1y&interval=1d
+```
+
+veya uygulama içinden `Teknik taramayı başlat`.
+
+## Dosya yapısı
+
+```txt
 api/
   ai.js
+  history.js
+  isyatirim.js
   katilim.js
   market.js
   scan.js
+  snapshot.js
 public/
   index.html
   app.js
   styles.css
 package.json
+vercel.json
 ```
 
-Vercel ayarları:
+## Vercel ayarları
 
-```text
-Framework Preset: Other
-Root Directory: api ve public klasörlerinin bulunduğu üst klasör
-Output Directory: public
-Build Command: boş bırakılabilir
+Framework Preset: `Other`  
+Output Directory: `public`  
+Root Directory: `api` ve `public` klasörlerinin bulunduğu üst klasör olmalı. `public` root directory yapılmamalı.
+
+## Kontrol sırası
+
+Deploy sonrası sırayla test et:
+
+```txt
+/api/history?symbol=ASELS&range=1y
+/api/market?symbol=ASELS&range=1y&interval=1d
+/api/snapshot?symbols=ASELS,BIMAS,TUPRS&range=1mo
+/api/scan?symbols=ASELS,BIMAS,TUPRS&range=1y&interval=1d
 ```
 
-AI için Environment Variables:
-
-```text
-GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-2.5-flash
-```
-
-Not: Bu sistem yatırım tavsiyesi vermez. Teknik analiz ve takip planı üretir.
+`history` çalışıyorsa veri çekme sorununun ana kısmı çözülmüştür.
